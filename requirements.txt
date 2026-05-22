@@ -1,0 +1,202 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              ZIP Extractor & Renamer — Guía de instalación y uso            ║
+║                         Windows  &  Linux / macOS                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+El programa solo necesita Python 3.10 o superior y una sola librería externa
+(customtkinter). Todo lo demás (zipfile, hashlib, threading, tkinter, etc.)
+viene incluido con Python.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WINDOWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 1 — Instalar Python
+  1. Ve a https://www.python.org/downloads/
+  2. Descarga la versión más reciente (3.10 o superior).
+  3. En el instalador activa la casilla:
+       ✅  "Add Python to PATH"   ← MUY IMPORTANTE
+  4. Haz clic en "Install Now".
+
+  Verificar que quedó bien instalado (abre CMD o PowerShell y escribe):
+  ─────────────────────────────────────────────────────────────────────
+    python --version
+  ─────────────────────────────────────────────────────────────────────
+  Deberías ver algo como:  Python 3.12.x
+
+
+PASO 2 — Instalar la librería customtkinter
+  Abre CMD o PowerShell y ejecuta:
+  ─────────────────────────────────────────────────────────────────────
+    pip install customtkinter
+  ─────────────────────────────────────────────────────────────────────
+
+
+PASO 3 — Ejecutar el programa
+  Opción A  (doble clic)
+    Haz doble clic en el archivo  Descompreso.py
+    Si Windows pregunta con qué abrirlo, elige "Python".
+
+  Opción B  (desde CMD o PowerShell)
+  ─────────────────────────────────────────────────────────────────────
+    cd "C:\ruta\donde\guardaste\el\archivo"
+    python Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+
+RESOLUCIÓN DE PROBLEMAS — WINDOWS
+  • "python no se reconoce como un comando"
+      → Reinstala Python y activa "Add Python to PATH".
+
+  • "No module named customtkinter"
+      → Ejecuta de nuevo:  pip install customtkinter
+
+  • "No module named tkinter"
+      → Tkinter viene con Python en Windows. Reinstala Python desde
+        python.org (no uses versiones de la Microsoft Store).
+
+  • La ventana se ve borrosa en pantallas de alta resolución
+      → El programa ya incluye ajuste DPI automático para Windows.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  LINUX  (Ubuntu / Debian / Fedora / Arch y similares)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 1 — Verificar Python
+  La mayoría de distribuciones modernas ya traen Python 3.10+.
+  Compruébalo con:
+  ─────────────────────────────────────────────────────────────────────
+    python3 --version
+  ─────────────────────────────────────────────────────────────────────
+
+  Si no está instalado:
+
+    Ubuntu / Debian:
+    ─────────────────────────────────────────────────────────────────
+      sudo apt update
+      sudo apt install python3 python3-pip python3-tk
+    ─────────────────────────────────────────────────────────────────
+
+    Fedora:
+    ─────────────────────────────────────────────────────────────────
+      sudo dnf install python3 python3-pip python3-tkinter
+    ─────────────────────────────────────────────────────────────────
+
+    Arch Linux:
+    ─────────────────────────────────────────────────────────────────
+      sudo pacman -S python python-pip tk
+    ─────────────────────────────────────────────────────────────────
+
+
+PASO 2 — Instalar la librería customtkinter
+  ─────────────────────────────────────────────────────────────────────
+    pip3 install customtkinter
+  ─────────────────────────────────────────────────────────────────────
+
+  Si pip3 da error de entorno (común en Ubuntu 23+), usa:
+  ─────────────────────────────────────────────────────────────────────
+    pip3 install customtkinter --break-system-packages
+  ─────────────────────────────────────────────────────────────────────
+
+
+PASO 3 — Ejecutar el programa
+  ─────────────────────────────────────────────────────────────────────
+    cd /ruta/donde/guardaste/el/archivo
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+
+RESOLUCIÓN DE PROBLEMAS — LINUX
+  • "No module named tkinter"
+      Ubuntu/Debian:  sudo apt install python3-tk
+      Fedora:         sudo dnf install python3-tkinter
+      Arch:           sudo pacman -S tk
+
+  • "No module named customtkinter"
+      → Ejecuta de nuevo:  pip3 install customtkinter --break-system-packages
+
+  • La ventana no aparece (error de display en servidor remoto / SSH)
+      → El programa requiere entorno gráfico (escritorio). No funciona
+        en sesiones SSH sin reenvío X11.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  macOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PASO 1 — Instalar Python
+  macOS trae una versión antigua de Python. Instala la oficial:
+  1. Ve a https://www.python.org/downloads/macos/
+  2. Descarga e instala la versión más reciente (3.10+).
+
+  O usa Homebrew:
+  ─────────────────────────────────────────────────────────────────────
+    brew install python
+  ─────────────────────────────────────────────────────────────────────
+
+
+PASO 2 — Instalar customtkinter
+  ─────────────────────────────────────────────────────────────────────
+    pip3 install customtkinter
+  ─────────────────────────────────────────────────────────────────────
+
+
+PASO 3 — Ejecutar el programa
+  ─────────────────────────────────────────────────────────────────────
+    cd /ruta/donde/guardaste/el/archivo
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+  Si macOS bloquea el script por seguridad:
+    Sistema → Privacidad y seguridad → Permitir de todas formas
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RESUMEN RÁPIDO DE COMANDOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Windows (CMD / PowerShell)
+  ─────────────────────────────────────────────────────────────────────
+    pip install customtkinter
+    python Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+  Linux — Ubuntu/Debian
+  ─────────────────────────────────────────────────────────────────────
+    sudo apt install python3 python3-pip python3-tk
+    pip3 install customtkinter --break-system-packages
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+  Linux — Fedora
+  ─────────────────────────────────────────────────────────────────────
+    sudo dnf install python3 python3-pip python3-tkinter
+    pip3 install customtkinter
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+  Linux — Arch
+  ─────────────────────────────────────────────────────────────────────
+    sudo pacman -S python python-pip tk
+    pip3 install customtkinter
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+  macOS
+  ─────────────────────────────────────────────────────────────────────
+    pip3 install customtkinter
+    python3 Descompreso.py
+  ─────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  LIBRERÍAS UTILIZADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  customtkinter   → pip install customtkinter   (única instalación manual)
+
+  Las siguientes vienen incluidas con Python y NO requieren instalación:
+    os, re, sys, queue, hashlib, threading, zipfile,
+    tkinter, dataclasses, concurrent.futures
