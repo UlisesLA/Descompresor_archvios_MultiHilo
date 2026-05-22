@@ -6,7 +6,6 @@ import hashlib
 import threading
 import zipfile
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import customtkinter as ctk
@@ -203,7 +202,7 @@ class ZipExtractorRenamerApp(ctk.CTk):
                                           font=ctk.CTkFont(size=13), text_color=MUTED)
         self.status_label.grid(row=0, column=0, padx=16, pady=16, sticky="w")
 
-        self.workers_label = ctk.CTkLabel(footer, text="Hilos: 4",
+        self.workers_label = ctk.CTkLabel(footer, text="Modo: FIFO – 1 a la vez",
                                            font=ctk.CTkFont(size=13), text_color=MUTED)
         self.workers_label.grid(row=0, column=1, padx=16, pady=16)
 
@@ -409,48 +408,49 @@ class ZipExtractorRenamerApp(ctk.CTk):
         self.btn_start.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
         self.status_label.configure(text="Procesando...")
-        self._log("[INFO] Inicio de procesamiento.")
+        self._log("[INFO] Inicio de procesamiento (modo FIFO – un archivo a la vez).")
 
-        max_workers = self._choose_workers(len(self.jobs))
-        self.workers_label.configure(text=f"Hilos: {max_workers}")
         self.worker_thread = threading.Thread(
-            target=self._process_all, args=(max_workers,), daemon=True)
+            target=self._process_all, daemon=True)
         self.worker_thread.start()
 
-    def _choose_workers(self, n_jobs: int):
-        cpu = os.cpu_count() or 4
-        if n_jobs <= 2:
-            return 2
-        return max(2, min(6, cpu, n_jobs))
-
-    def _process_all(self, max_workers: int):
+    def _process_all(self):
+        """
+        Cola FIFO estricta: procesa los trabajos de uno en uno en el mismo
+        orden en que fueron seleccionados. Un único hilo de fondo; la UI
+        recibe actualizaciones vía ui_queue sin ningún bloqueo.
+        """
         total  = len(self.jobs)
         done   = 0
         errors = 0
+
         self.ui_queue.put(("summary", total, done, errors))
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_job = {executor.submit(self._process_single_job, job): job
-                             for job in self.jobs}
-            for future in as_completed(future_to_job):
-                if self.cancel_event.is_set():
-                    break
-                job = future_to_job[future]
-                try:
-                    ok, message = future.result()
-                    if ok:
-                        done += 1
-                    else:
-                        errors += 1
-                    self.ui_queue.put(("job_result", job, ok, message))
-                except Exception as e:
-                    errors += 1
-                    self.ui_queue.put(("job_result", job, False, f"Excepción: {e}"))
+        # Construir cola FIFO con todos los trabajos
+        fifo: queue.Queue = queue.Queue()
+        for job in self.jobs:
+            fifo.put(job)
 
-                processed = done + errors
-                self.ui_queue.put(("progress",
-                                   processed / total if total else 0,
-                                   total, done, errors))
+        while not fifo.empty():
+            if self.cancel_event.is_set():
+                break
+
+            job = fifo.get()
+            try:
+                ok, message = self._process_single_job(job)
+                if ok:
+                    done += 1
+                else:
+                    errors += 1
+                self.ui_queue.put(("job_result", job, ok, message))
+            except Exception as e:
+                errors += 1
+                self.ui_queue.put(("job_result", job, False, f"Excepción: {e}"))
+
+            processed = done + errors
+            self.ui_queue.put(("progress",
+                               processed / total if total else 0,
+                               total, done, errors))
 
         if self.cancel_event.is_set():
             self.ui_queue.put(("done", False, "Proceso cancelado por el usuario."))
