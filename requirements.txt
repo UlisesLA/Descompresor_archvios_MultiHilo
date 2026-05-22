@@ -16,7 +16,7 @@ PASO 1 — Instalar Python
   1. Ve a https://www.python.org/downloads/
   2. Descarga la versión más reciente (3.10 o superior).
   3. En el instalador activa la casilla:
-       ✅  "Add Python to PATH"   ← MUY IMPORTANTE
+       "Add Python to PATH"   ← MUY IMPORTANTE
   4. Haz clic en "Install Now".
 
   Verificar que quedó bien instalado (abre CMD o PowerShell y escribe):
