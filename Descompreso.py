@@ -6,6 +6,7 @@ import hashlib
 import threading
 import zipfile
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import customtkinter as ctk
@@ -202,8 +203,11 @@ class ZipExtractorRenamerApp(ctk.CTk):
                                           font=ctk.CTkFont(size=13), text_color=MUTED)
         self.status_label.grid(row=0, column=0, padx=16, pady=16, sticky="w")
 
-        self.workers_label = ctk.CTkLabel(footer, text="Modo: FIFO – 1 a la vez",
-                                           font=ctk.CTkFont(size=13), text_color=MUTED)
+        _w = max(1, (os.cpu_count() or 2) // 2)
+        self.workers_label = ctk.CTkLabel(
+            footer,
+            text=f"FIFO · {_w} núcleos por ZIP  (de {os.cpu_count() or 2})",
+            font=ctk.CTkFont(size=13), text_color=MUTED)
         self.workers_label.grid(row=0, column=1, padx=16, pady=16)
 
         self.cancel_btn = self._btn(footer, "Cancelar", self.cancel_processing, width=180)
@@ -408,7 +412,11 @@ class ZipExtractorRenamerApp(ctk.CTk):
         self.btn_start.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
         self.status_label.configure(text="Procesando...")
-        self._log("[INFO] Inicio de procesamiento (modo FIFO – un archivo a la vez).")
+        _w = max(1, (os.cpu_count() or 2) // 2)
+        self._log(
+            f"[INFO] Inicio de procesamiento — FIFO (1 ZIP a la vez) "
+            f"· {_w} núcleos por ZIP."
+        )
 
         self.worker_thread = threading.Thread(
             target=self._process_all, daemon=True)
@@ -461,6 +469,11 @@ class ZipExtractorRenamerApp(ctk.CTk):
     # Utilidades SHA-256
     # ──────────────────────────────────────────────
     @staticmethod
+    def _half_cpu_workers() -> int:
+        """Mitad de los núcleos lógicos disponibles, mínimo 1."""
+        return max(1, (os.cpu_count() or 2) // 2)
+
+    @staticmethod
     def _sha256_file(path: str) -> str:
         """Calcula SHA-256 del archivo en disco (lectura por chunks)."""
         h = hashlib.sha256()
@@ -473,56 +486,96 @@ class ZipExtractorRenamerApp(ctk.CTk):
         return h.hexdigest()
 
     # ──────────────────────────────────────────────
-    # Extracción de un miembro con progreso + SHA-256
+    # Extracción de UN miembro (hilo independiente)
     # ──────────────────────────────────────────────
-    def _extract_member_with_progress(
-        self, zf, member, output_folder, job, file_idx: int, total_files: int
+    def _extract_member_parallel(
+        self,
+        zip_path: str,
+        member,
+        output_folder: str,
+        shared: dict,
+        lock: threading.Lock,
+        job: "ZipJob",
     ):
         """
-        Extrae un miembro del ZIP haciendo streaming chunk a chunk.
-        - Actualiza la UI con progreso real mientras escribe.
-        - Calcula SHA-256 del stream descomprimido al vuelo.
-        Devuelve (out_path, sha256_del_stream | None).
+        Cada hilo abre su propio handle al ZIP (thread-safe).
+        Extrae un miembro, calcula SHA-256 del stream al vuelo y
+        actualiza el contador compartido de bytes para el progreso.
+
+        Devuelve (out_path, sha256_stream | None, member.filename).
         """
         out_path = os.path.join(output_folder, member.filename)
 
-        # Entrada de directorio → sólo crear
+        # Directorio → sólo crear
         if member.filename.endswith("/"):
             os.makedirs(out_path, exist_ok=True)
-            return out_path, None
+            with lock:
+                shared["files_done"] += 1
+            return out_path, None, member.filename
 
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-        file_size   = member.file_size          # tamaño descomprimido
+        file_size   = member.file_size or 0
         h_src       = hashlib.sha256()
-        extracted   = 0
-        last_update = 0
+        written     = 0
+        last_report = 0
+        member_key  = f"_b_{id(member)}"   # bytes ya reportados para este miembro
 
-        with zf.open(member) as src, open(out_path, "wb") as dst:
+        # Abrir el ZIP de forma independiente por hilo
+        with zipfile.ZipFile(zip_path, "r") as zf, \
+             zf.open(member) as src, \
+             open(out_path, "wb") as dst:
+
             while True:
+                if self.cancel_event.is_set():
+                    return out_path, None, member.filename
+
                 chunk = src.read(65536)
                 if not chunk:
                     break
+
                 dst.write(chunk)
                 h_src.update(chunk)
-                extracted += len(chunk)
+                written += len(chunk)
 
-                # Actualizar UI: primer chunk o cada UPDATE_BYTES
-                if last_update == 0 or (extracted - last_update) >= UPDATE_BYTES:
-                    last_update = extracted
-                    pct_file    = extracted / file_size if file_size > 0 else 1.0
+                if last_report == 0 or (written - last_report) >= UPDATE_BYTES:
+                    last_report = written
+                    delta = written - shared.get(member_key, 0)
+                    with lock:
+                        shared[member_key]    = written
+                        shared["bytes_done"] += delta
+                        pct = (shared["bytes_done"] / shared["total_bytes"]
+                               if shared["total_bytes"] > 0 else 1.0)
+                        files_done = shared["files_done"]
+
                     self.ui_queue.put((
-                        "file_progress",
-                        job, file_idx, total_files,
-                        os.path.basename(member.filename), pct_file,
+                        "file_progress", job,
+                        files_done, shared["total_files"],
+                        os.path.basename(member.filename), pct,
                     ))
 
-        return out_path, h_src.hexdigest()
+        # Ajustar bytes al terminar (por si file_size difiere del real)
+        delta_final = written - shared.get(member_key, 0)
+        with lock:
+            shared[member_key]    = written
+            shared["bytes_done"] += delta_final
+            shared["files_done"] += 1
+            pct_final = (shared["bytes_done"] / shared["total_bytes"]
+                         if shared["total_bytes"] > 0 else 1.0)
+            files_done = shared["files_done"]
+
+        self.ui_queue.put((
+            "file_progress", job,
+            files_done, shared["total_files"],
+            os.path.basename(member.filename), pct_final,
+        ))
+
+        return out_path, h_src.hexdigest(), member.filename
 
     # ──────────────────────────────────────────────
     # Proceso de un trabajo individual
     # ──────────────────────────────────────────────
-    def _process_single_job(self, job: ZipJob):
+    def _process_single_job(self, job: "ZipJob"):
         if self.cancel_event.is_set():
             return False, "Cancelado"
 
@@ -543,39 +596,61 @@ class ZipExtractorRenamerApp(ctk.CTk):
         try:
             os.makedirs(output_folder, exist_ok=True)
 
+            # ── 1) Verificar integridad CRC del ZIP ──────────────
+            job.status = "Verificando ZIP..."
+            self.ui_queue.put(("status_update", job))
+
             with zipfile.ZipFile(job.zip_path, "r") as zf:
-
-                # ── 1) Verificar integridad CRC del ZIP ──────────
-                job.status = "Verificando ZIP..."
-                self.ui_queue.put(("status_update", job))
-
                 bad = zf.testzip()
                 if bad is not None:
                     job.status = "ZIP dañado"
                     return False, f"ZIP corrupto, primer archivo con problema: {bad}"
 
-                # ── 2) Extracción con progreso y SHA-256 ─────────
-                members     = [m for m in zf.infolist() if not m.filename.endswith("/")]
-                total_m     = len(members)
-                sha_errors  = []
+                # Lista de miembros (archivos reales, sin carpetas)
+                members = [m for m in zf.infolist() if not m.filename.endswith("/")]
 
-                job.status = "Extrayendo..."
-                self.ui_queue.put(("status_update", job))
+            total_files = len(members)
+            total_bytes = sum(m.file_size for m in members) or 1   # evitar /0
 
-                for i, member in enumerate(members):
+            # Estado compartido entre hilos (accedido bajo lock)
+            shared: dict = {
+                "files_done": 0,
+                "bytes_done": 0,
+                "total_files": total_files,
+                "total_bytes": total_bytes,
+            }
+            lock = threading.Lock()
+
+            job.status = "Extrayendo..."
+            self.ui_queue.put(("status_update", job))
+
+            sha_errors: list[str] = []
+            workers = self._half_cpu_workers()
+
+            # ── 2) Extracción paralela de miembros (dentro del ZIP) ──
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(
+                        self._extract_member_parallel,
+                        job.zip_path, member, output_folder,
+                        shared, lock, job,
+                    ): member
+                    for member in members
+                }
+
+                for future in as_completed(futures):
                     if self.cancel_event.is_set():
                         return False, "Cancelado durante extracción"
 
-                    out_path, sha_src = self._extract_member_with_progress(
-                        zf, member, output_folder, job, i + 1, total_m)
+                    out_path, sha_src, fname = future.result()
 
-                    # ── 3) Validación SHA-256 ──────────────────────
+                    # ── 3) Validación SHA-256 por archivo ─────────
                     if sha_src and os.path.isfile(out_path):
-                        sha_dst = self._sha256_file(out_path)
-                        name_short = os.path.basename(member.filename)
+                        sha_dst    = self._sha256_file(out_path)
+                        name_short = os.path.basename(fname)
 
                         if sha_src != sha_dst:
-                            sha_errors.append(member.filename)
+                            sha_errors.append(fname)
                             self.ui_queue.put((
                                 "log",
                                 f"[ERROR] SHA-256 NO coincide: {name_short}\n"
@@ -592,7 +667,7 @@ class ZipExtractorRenamerApp(ctk.CTk):
                 job.status = "Error SHA-256"
                 return False, f"Fallo de integridad SHA-256 en {len(sha_errors)} archivo(s)"
 
-            # ── 4) Renombrar el archivo E57 = nombre de la carpeta ─
+            # ── 4) Renombrar el archivo E57 = nombre de la carpeta ──
             e57_files = [
                 f for f in os.listdir(output_folder)
                 if f.lower().endswith(".e57")
@@ -606,9 +681,10 @@ class ZipExtractorRenamerApp(ctk.CTk):
                     os.rename(old_path, new_path)
                 self.ui_queue.put(("log", f"[OK] E57 renombrado → {new_name}"))
             else:
-                self.ui_queue.put(("log", f"[AVISO] No se encontró archivo .e57 en {final_name}"))
+                self.ui_queue.put(("log",
+                    f"[AVISO] No se encontró archivo .e57 en {final_name}"))
 
-            # ── NOTA: el ZIP original NO se copia dentro de la carpeta ─
+            # ZIP original NO se copia dentro de la carpeta
 
             job.status = "Completado"
             return True, f"Extraído y renombrado a {final_name}"
